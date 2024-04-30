@@ -1,15 +1,21 @@
 
+import sys
+import os
+# 把当前文件所在文件夹的父文件夹路径加入到PYTHONPATH
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from normal import method
 
-from flask import Flask, request
 
-# 載入 json 標準函式庫，處理回傳的資料格式
+from IPython.display import display, clear_output
+from urllib.request import urlopen
+import pandas
+import datetime
+import requests
+import sched
+import time
 import json
 
-# 載入 LINE Message API 相關函式庫
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
-
+g_schedule = sched.scheduler(time.time, time.sleep)
 
 def initialization():
 
@@ -37,208 +43,97 @@ def initialization():
         method.Logging(config, path, 'ERROR', '{}'.format(e))
         raise
 
-def run(popen, **kwargs):
+def tableColor(val):
+    if val > 0:
+        color = 'red'
+    elif val < 0:
+        color = 'green'
+    else:
+        color = 'white'
+    return 'color: %s' % color
+
+def run(config, path, targets, **kwargs):
     
     try: 
 
+        pandas.options.mode.copy_on_write = True
         result = False
         data = ''
 
         for i in range(1):
 
-            # command = kwargs.get('command', '')
-            # flag = kwargs.get('flag', '')
-            # timeout = kwargs.get('timeout', '5')
-            # loop = kwargs.get('loop', 'Flase')
-            # test_pass = kwargs.get('test_pass', '')
-            # test_fail = kwargs.get('test_fail', '')
-            # delay_time = kwargs.get('delay_time', '0')
-            # interface = kwargs.get('interface', '0')
+            clear_output(wait=True)
+    
+            # 組成stock_list
+            stock_list = '|'.join('tse_{}.tw'.format(target) for target in targets) 
+            
+            #　query data
+            query_url = "http://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch="+ stock_list
+            data = json.loads(urlopen(query_url).read())
+            # data_string = ",".join(str(element) for element in data['msgArray'])
+            # method.Logging(config, path_current_dir, 'INFO', data_string)
 
-            # if '(path)' in command: command = command.replace('(path)', path_current_dir)
-            # if '(path)' in interface: interface = interface.replace('(path)', path_current_dir)
-
-            # if command == 'delay':
-            #     if int(delay_time) != 0 :
-            #         method.Logging(config, path_current_dir, 'INFO', 'delay({})'.format(delay_time))
-            #         sleep(int(delay_time))
-
-            # else:
-
-            #     if command == 'open':
-            #         command = ''
-            #         popen = subprocess_popen(command, flag, timeout, popen, fd_r, fd_w, interface)
-
-            #     if popen == None:
-            #         raise RuntimeError('subprocess no open')
-            #         break
-
-            #     data = subprocess_write(command, flag, timeout,  popen, fd_r, fd_w)
-
-            #     if test_pass : 
-            #         if test_pass not in data :
-            #             result = False
-            #             break
-            #     if test_fail:
-            #         if test_fail in data :
-            #             result = False
-            #             break
-
-            #     if loop == 'True':
-            #         while(True):
-            #             if method.PathIsExist(method.PathJoin(path_current_dir, 'STOP')) == True: 
-            #                 break
-            #             sleep(1)
+            # 過濾出有用到的欄位
+            columns = ['c','n','z','tv','v','o','h','l','y']
+            df = pandas.DataFrame(data['msgArray'], columns=columns)
+            df.columns = ['股票代號','公司簡稱','當盤成交價','當盤成交量','累積成交量','開盤價','最高價','最低價','昨收價']
+            df.insert(9, "漲跌百分比", 0.0)
+            # print(df.dtypes)
+            # df[['當盤成交價','當盤成交量','累積成交量','開盤價','最高價','最低價','昨收價']] = df[['當盤成交價','當盤成交量','累積成交量','開盤價','最高價','最低價','昨收價']].astype(float)
+            # print(df.dtypes)
+   
+            
+            # 新增漲跌百分比
+            for x in range(len(df.index)):
+                if df['當盤成交價'].iloc[x] != '-':
+                    df.loc[x, ['當盤成交價','當盤成交量','累積成交量','開盤價','最高價','最低價','昨收價']] = df.loc[x, ['當盤成交價','當盤成交量','累積成交量','開盤價','最高價','最低價','昨收價']].astype(float)
+                    # df.iloc[x, [2,3,4,5,6,7,8]] = df.iloc[x, [2,3,4,5,6,7,8]].astype(float)
+                    df.loc[x, '漲跌百分比'] = (df.loc[x, '當盤成交價'] - df.loc[x, '昨收價'])/df.loc[x, '昨收價'] * 100
+                    print(df['漲跌百分比'].iloc[x])
+            
+            # 紀錄更新時間
+            time = datetime.datetime.now()  
+            print("更新時間:" + str(time.hour)+":"+str(time.minute)+":"+str(time.second))
+            
+            # show table
+            df = df.style.applymap(tableColor, subset=['漲跌百分比'])
+            display(df)
+            
+            start_time = datetime.datetime.strptime(str(time.date())+'9:30', '%Y-%m-%d%H:%M')
+            end_time =  datetime.datetime.strptime(str(time.date())+'23:30', '%Y-%m-%d%H:%M')
+            
+            # 判斷爬蟲終止條件
+            if time >= start_time and time <= end_time:
+                g_schedule.enter(1, 0, run, argument=(config, path, targets,))
 
             result = True
 
     except Exception as e:
         raise e
     finally:
-        if result == True and not data: data = 'done.'
-        elif result == False and not data: data = 'failed.'
-        return popen, result, data
-    
-app = Flask(__name__)
-
-@app.route("/", methods=['POST'])
-def linebot():
-    body = request.get_data(as_text=True)                    # 取得收到的訊息內容
-    try:
-        json_data = json.loads(body)                         # json 格式化訊息內容
-        access_token = 'wHFWR8uoU5DPESeIXurDUKb2EF4+jWlv5pY5b3edhMx+YnAE7upqtPS+YsSM7Y4LH4SzjUnCqR/++lNmM11wplUnPDNzd/9FYxwNcbRacJJJYprt8hGEbn54XDwngR39VeImULabemmixOKSHSd4YgdB04t89/1O/w1cDnyilFU='
-        secret = '354e355942f534dd2a5b5f8604d912e2'
-        line_bot_api = LineBotApi(access_token)              # 確認 token 是否正確
-        handler = WebhookHandler(secret)                     # 確認 secret 是否正確
-        signature = request.headers['X-Line-Signature']      # 加入回傳的 headers
-        handler.handle(body, signature)                      # 綁定訊息回傳的相關資訊
-        tk = json_data['events'][0]['replyToken']            # 取得回傳訊息的 Token
-        type = json_data['events'][0]['message']['type']     # 取得 LINe 收到的訊息類型
-        if type=='text':
-            msg = json_data['events'][0]['message']['text']  # 取得 LINE 收到的文字訊息
-            print(msg)                                       # 印出內容
-            reply = msg
-            line_bot_api.event
-        else:
-            reply = '你傳的不是文字呦～'
-        print(reply)
-        line_bot_api.reply_message(tk,TextSendMessage(reply))# 回傳訊息
-    except:
-        print(body)                                          # 如果發生錯誤，印出收到的內容
-    return 'OK'                                              # 驗證 Webhook 使用，不能省略
-
-@app.route("/")
-def home():
-    user_id = 'U5e44338732da5113558c7c2ebc93ccb4'
-    access_token = 'wHFWR8uoU5DPESeIXurDUKb2EF4+jWlv5pY5b3edhMx+YnAE7upqtPS+YsSM7Y4LH4SzjUnCqR/++lNmM11wplUnPDNzd/9FYxwNcbRacJJJYprt8hGEbn54XDwngR39VeImULabemmixOKSHSd4YgdB04t89/1O/w1cDnyilFU='
-    line_bot_api = LineBotApi(access_token)
-    try:
-        msg = request.args.get('msg')   # 取得網址的 msg 參數
-        if msg != None:
-        # 如果有 msg 參數，觸發 LINE Message API 的 push_message 方法
-            line_bot_api.push_message(user_id, TextSendMessage(text=msg))
-            return msg
-        else:
-            return 'OK'
-    except:
-        print('error')
+        # return ''
+        pass
 
 if __name__ == '__main__':
     pass
 
     try:       
-        
-        config, path_current_dir =  initialization()
-        
-        app.run(host='0.0.0.0', port=5001)
 
+        config, path_current_dir = initialization()
 
-        # mode = method.ConfigGet(config, 'env', 'mode', 'script')
-        # popen = None
-        # result = True
-        # data = ''
-        # method.FileDelete(method.PathJoin(path_current_dir, './sub.log'))
-        # fd_w = open(method.PathJoin(path_current_dir, './sub.log'), 'w')
-        # fd_r = open(method.PathJoin(path_current_dir, './sub.log'), 'r')
-        
-        # if mode == 'script':
-        #     with open(method.PathJoin(path_current_dir, 'script.txt'), newline='', encoding='utf-8') as csvfile:
-        #         rows = csv.reader(csvfile)
-        #         for row in rows:
-        #             data = ', '.join(row)
-        #             if not data or data[0] == '#': continue
-        #             kwargs = eval(data)
-                    
-        #             popen, result, data = subprocess_run(popen, **kwargs)
-        #             if  result == False:
-        #                 break
-        # elif mode == 'socket':
-              
-        #     HOST = '127.0.0.1'
-        #     PORT = 8383
-        #     conn = None
-        #     end = False
-        #     data = ''
+        # 欲爬取的股票代碼
+        stock_list = ['1101','1102','1103','2330']
 
-        #     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #     s.bind((HOST, PORT))
-        #     s.listen(1)
-
-        #     method.Logging(config, path_current_dir, 'INFO', 'socket server start at {}:{}'.format(HOST, PORT))
-
-        #     while True:
-        #         conn, addr = s.accept()
-        #         method.Logging(config, path_current_dir, 'INFO', 'socket Connected by {}'.format(addr))
-        #         conn.send('R: socket Connected by {}\r\n'.format(addr).encode())
-
-        #         while True:
-                    
-        #             try: 
-        #                 recv = conn.recv(1024)
-        #                 recv = recv.decode()
-        #                 recv = recv.strip()
-        #                 recv = recv.replace('\n', '').replace('\r', '') 
-        #                 if not recv or recv == 'close':
-        #                     data = 'close'
-        #                     break
-        #                 elif recv == 'exit':
-        #                     data = 'exit'
-        #                     break
-
-        #                 kwargs = eval(recv)
-        #                 if type(kwargs).__name__ != 'dict' :
-        #                     data = 'Unknow'
-        #                     continue
-
-        #                 popen, result, data = subprocess_run(popen, **kwargs)
-        #             except Exception as e:
-        #                 data = '{}'.format(e)
-        #                 pass
-        #             finally:
-        #                 if data: conn.send('R: {}\r\n'.format(data).encode())
-
-        #         if data == 'exit': break
-        #         elif data == 'close': conn.close()
+        # 每秒定時器
+        g_schedule.enter(1, 0, run, argument=(config, path_current_dir,stock_list,))
+        g_schedule.run()
 
     except Exception as e:
         result = False
         method.Logging(config, path_current_dir, 'ERROR', '{}'.format(e))
     
     finally:
-        # if mode == 'script':
-        #     if popen != None:
-        #         fd_w.close()
-        #         fd_r.close()
-        #         popen.kill()
-        #     if result == True:
-        #         method.FileCreate('{}\\PASS'.format(path_current_dir))
-        #     else:
-        #         method.FileCreate('{}\\FAIL'.format(path_current_dir))
-        # elif mode == 'socket':
-        #     if conn != None:
-        #         conn.close()
 
-        
         method.Logging(config, path_current_dir, 'INFO', 'Finish.')
     
         
