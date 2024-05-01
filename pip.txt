@@ -1,1 +1,4 @@
 pip install IPython
+
+#https://www.cnblogs.com/xuxugui/p/9815237.html
+pip install matplotlib

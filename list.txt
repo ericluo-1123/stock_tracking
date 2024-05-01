@@ -1,0 +1,2 @@
+{'code' : '0050', 'target_profit' : '1000', 'target_loss' : '10', 'level' : '0.5', 'alarm' : 'False'}
+{'code' : '0051', 'target_profit' : '1000', 'target_loss' : '10', 'level' : '0.1', 'alarm' : 'False'}
