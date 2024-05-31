@@ -2,3 +2,7 @@ pip install IPython
 
 #https://www.cnblogs.com/xuxugui/p/9815237.html
 pip install matplotlib
+
+pip install bs4
+import requests
+pip install ruamel.yaml
